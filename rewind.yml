@@ -257,4 +257,3 @@ dependencies:
       - xxhash==3.5.0
       - yarl==1.20.1
       - zipp==3.23.0
-prefix: /home/jiahui/miniconda3/envs/rewind

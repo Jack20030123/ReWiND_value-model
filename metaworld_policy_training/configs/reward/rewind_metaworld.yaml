@@ -5,13 +5,15 @@ general_training:
   entropy_term: "auto"
 
 
-reward_model: 
+reward_model:
   name: 'rewind'
   batch_size: 64
   model_path: CHECKPOINT_PATH
   reward_at_every_step: true
   camera_names: ["image"]
 
+  # use_progress_diff: use reward = P(s') - P(s) instead of P(s)
+  use_progress_diff: false
 
   success_bonus: 64.0
 

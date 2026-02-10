@@ -11,7 +11,7 @@ wandb_notes: ""
 
 logging:
   wandb: true
-  wandb_entity_name: your-wandb-entity
+  wandb_entity_name: rewind-valuemodel
   wandb_project_name: rewind-policy-training
   wandb_group_name: "${reward_model.name}_${general_training.algo}_${environment.env_id}_action_chunk_release"
   log_dir: "./logs/${logging.wandb_group_name}"

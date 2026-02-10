@@ -4,7 +4,7 @@ general_training:
   dense_rewards_at_end: false
 
 
-reward_model: 
+reward_model:
   name: 'rewind_two_cam'
   batch_size: 64
   # model_path: "weights/rewind/real_world_PosEmb_Rewind_ratio_0.8_EMA_momentum_0.3_End_Rewind_ratio_0.1/model_20.pth"
@@ -12,6 +12,9 @@ reward_model:
   model_path: ["weights/rewind/all/model_49.pth", "weights/rewind/all/model_49.pth"]
   camera_names: ["observation.images.main", "observation.images.side"]
   reward_at_every_step: true
+
+  # use_progress_diff: use reward = P(s') - P(s) instead of P(s)
+  use_progress_diff: false
 
   success_bonus: 125.0
 

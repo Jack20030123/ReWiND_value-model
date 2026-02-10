@@ -54,11 +54,11 @@ class ReWiNDTransformer(nn.Module):
         # Combine sequence: [text, video_frames]
         sequence = torch.cat([text_embed, video_embed], dim=1)
         
-        # Create attention mask if needed
-        if attention_mask is not None:
-            # Add mask positions for class token and text token
-            extended_mask = torch.ones((batch_size, 2), device=attention_mask.device)  # class token + text token
-            attention_mask = torch.cat([extended_mask, attention_mask], dim=1)
+        # # Create attention mask if needed
+        # if attention_mask is not None:
+        #     # Add mask positions for class token and text token
+        #     extended_mask = torch.ones((batch_size, 2), device=attention_mask.device)  # class token + text token
+        #     attention_mask = torch.cat([extended_mask, attention_mask], dim=1)
         
         # Pass through transformer
         transformed = self.transformer(sequence, is_causal=True, mask = self.attention_mask)

@@ -156,7 +156,14 @@ def label_trajectories_iteratively(
                 with torch.no_grad():
                     reward_outputs = rewind_model(video_slices, language_embedding).squeeze(-1) # (num_steps, 1)
                     reward_outputs = reward_outputs[last_index_mask] # (num_steps, max_length)
-                    save_reward_outputs = reward_outputs.cpu().numpy()[1:] # save reward from the after first action
+                    progress_values = reward_outputs.cpu().numpy()
+
+                    if args.use_progress_diff:
+                        # Progress diff: reward = P(s') - P(s)
+                        save_reward_outputs = progress_values[1:] - progress_values[:-1]
+                    else:
+                        # Original: reward = P(s)
+                        save_reward_outputs = progress_values[1:]
                 save_lang_embedding = lang_embedding.repeat(num_steps, 1).cpu().numpy()
 
                 # Save to labeled dataset
@@ -203,6 +210,11 @@ def main():
     )
     parser.add_argument(
         "--device", type=str, default="cuda", help="Device to use for encoding."
+    )
+    parser.add_argument(
+        "--use_progress_diff",
+        action="store_true",
+        help="Use progress diff (P(s') - P(s)) instead of P(s) as reward."
     )
 
     args = parser.parse_args()

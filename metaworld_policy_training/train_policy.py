@@ -109,6 +109,9 @@ def create_exp_name(cfg: DictConfig):
 
     exp_name += f"action_chunk_{cfg.general_training.action_chunk_size}_Seed_{cfg.general_training.seed}"
 
+    if cfg.reward_model.use_progress_diff:
+        exp_name += "_diff"
+
     # if the last character is an underscore, remove it
     if exp_name[-1] == "_":
         exp_name = exp_name[:-1]
@@ -557,6 +560,9 @@ def create_envs(cfg: DictConfig, reward_model: BaseRewardModel, logger=None):
 
     ignore_language = env_config.ignore_language
 
+    # Get use_progress_diff from config (default to False if not specified)
+    use_progress_diff = cfg.reward_model.get("use_progress_diff", False)
+
     if "metaworld" in env_config.cfg_name:
         if env_config.n_envs > 1:
             envs = DummyVecEnv(
@@ -576,6 +582,7 @@ def create_envs(cfg: DictConfig, reward_model: BaseRewardModel, logger=None):
                         action_chunk_size=cfg.general_training.action_chunk_size,
                         logger=logger,
                         terminate_on_success=cfg.general_training.terminate_on_success,
+                        use_progress_diff=use_progress_diff,
                     )
                     for _ in range(env_config.n_envs)
                 ]
@@ -597,6 +604,7 @@ def create_envs(cfg: DictConfig, reward_model: BaseRewardModel, logger=None):
                         action_chunk_size=cfg.general_training.action_chunk_size,
                         logger=logger,
                         terminate_on_success=cfg.general_training.terminate_on_success,
+                        use_progress_diff=use_progress_diff,
                     )
                     for _ in range(1)
                 ]
@@ -619,6 +627,7 @@ def create_envs(cfg: DictConfig, reward_model: BaseRewardModel, logger=None):
                         action_chunk_size=cfg.general_training.action_chunk_size,
                         logger=logger,
                         terminate_on_success=cfg.general_training.terminate_on_success,
+                        use_progress_diff=use_progress_diff,
                     )
                 ]
             )
@@ -638,6 +647,7 @@ def create_envs(cfg: DictConfig, reward_model: BaseRewardModel, logger=None):
                         action_chunk_size=cfg.general_training.action_chunk_size,
                         logger=logger,
                         terminate_on_success=cfg.general_training.terminate_on_success,
+                        use_progress_diff=use_progress_diff,
                     )
                 ]
             )  # KitchenEnvDenseOriginalReward(time=True)
