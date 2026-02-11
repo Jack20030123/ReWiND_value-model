@@ -265,13 +265,17 @@ def main():
     # Compute diff
     progress_diff = np.diff(progress_raw)  # length = num_frames - 1
 
+    print(f"  progress_raw length: {len(progress_raw)}, gt_rewards length: {len(gt_rewards)}")
+
+    # Align lengths (in case padding/subsample changed progress length)
+    n = min(len(progress_raw), len(gt_rewards))
+    progress_raw = progress_raw[:n]
+    gt_rewards = gt_rewards[:n]
+    progress_diff = np.diff(progress_raw)
+
     # --- Correlation analysis ---
     print("\n=== Computing Correlations ===")
     results = []
-
-    # imgs and gt_rewards are aligned: imgs[i] is the frame before step i, gt_rewards[i] is the reward from step i
-    # progress_raw[i] is the progress at frame i
-    # progress_diff[i] = progress_raw[i+1] - progress_raw[i]
 
     results.append(compute_correlations(
         progress_raw, gt_rewards, "Raw Progress", "GT Reward"))
@@ -304,7 +308,7 @@ def main():
     # --- Generate video ---
     print("\n=== Generating Video ===")
     video_path = os.path.join(args.output_dir, "trajectory_analysis.mp4")
-    generate_video(raw_images, progress_raw, progress_diff, gt_rewards,
+    generate_video(raw_images[:n], progress_raw, progress_diff, gt_rewards,
                    video_path, args.env_id, success_step, fps=args.fps)
 
     print("\nDone!")
