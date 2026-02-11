@@ -102,11 +102,10 @@ def score_trajectory(reward_model, raw_images, text_instruction):
             embeddings.append(emb)
         video_embeddings = torch.cat(embeddings)  # (num_frames, 768)
 
-    # Pad / subsample to max_length if needed
-    if reward_model.args.subsample_video:
-        video_embeddings = reward_model.padding_video(
-            video_embeddings, reward_model.args.max_length
-        )
+    # Always pad/subsample to max_length (attention mask is fixed size)
+    video_embeddings = reward_model.padding_video(
+        video_embeddings, reward_model.args.max_length
+    )
 
     video_embeddings = video_embeddings.unsqueeze(0).float().to(device)  # (1, T, 768)
 
