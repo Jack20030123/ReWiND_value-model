@@ -293,10 +293,16 @@ def main():
     # --- Score trajectory with ReWiND ---
     print("\n=== Scoring Trajectory ===")
     progress_raw = score_trajectory(reward_model, raw_images, text_instruction)
-
-    # If subsampled/padded, progress may have different length than frames
-    # Truncate or align to actual frame count
     progress_raw = progress_raw[:num_frames]
+
+    print(f"  progress_raw length: {len(progress_raw)}, gt_rewards length: {len(gt_rewards)}")
+
+    # Align lengths (in case padding/subsample changed progress length)
+    n = min(len(progress_raw), len(gt_rewards))
+    progress_raw = progress_raw[:n]
+    gt_rewards = gt_rewards[:n]
+    raw_images = raw_images[:n]
+    num_frames = n
 
     # Compute diff
     progress_diff = np.diff(progress_raw)  # length = num_frames - 1
