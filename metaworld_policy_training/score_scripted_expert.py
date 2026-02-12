@@ -69,6 +69,7 @@ def run_scripted_expert(env_name, seed=0, max_attempts=15):
 
         for step in range(env.max_path_length):
             img = env.sim.render(*RESOLUTION, mode="offscreen", camera_name=CAMERA).astype(np.uint8)
+            img = img[::-1]  # MuJoCo offscreen renders vertically flipped
             imgs.append(img)
 
             a = policy.get_action(o)
@@ -81,6 +82,7 @@ def run_scripted_expert(env_name, seed=0, max_attempts=15):
                 success_step = step
                 # Render the post-success frame before exiting
                 img = env.sim.render(*RESOLUTION, mode="offscreen", camera_name=CAMERA).astype(np.uint8)
+                img = img[::-1]
                 imgs.append(img)
                 gt_rewards.append(r)
                 break
