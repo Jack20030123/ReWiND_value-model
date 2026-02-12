@@ -79,6 +79,10 @@ def run_scripted_expert(env_name, seed=0, max_attempts=15):
             if info["success"] and not success:
                 success = True
                 success_step = step
+                # Render the post-success frame before exiting
+                img = env.sim.render(*RESOLUTION, mode="offscreen", camera_name=CAMERA).astype(np.uint8)
+                imgs.append(img)
+                gt_rewards.append(r)
                 break
 
         if success:

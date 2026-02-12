@@ -76,6 +76,10 @@ def run_episode(env, policy, max_steps=128):
             success_step = step
 
         if done[0]:
+            # Render the post-final frame before exiting
+            raw_img = env.envs[0].render(mode="rgb_array")
+            raw_images.append(raw_img)
+            gt_rewards.append(reward[0])
             break
 
     return raw_images, np.array(gt_rewards), success, success_step
