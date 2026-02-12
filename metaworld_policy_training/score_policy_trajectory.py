@@ -44,13 +44,17 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 def load_policy(best_model_path, env):
     """Load best_model.zip (SB3 format). Try RLPD first, then IQL."""
+    errors = {}
     for cls in [RLPD, IQL]:
         try:
             model = cls.load(best_model_path, env=env)
             print(f"Loaded policy as {cls.__name__} from {best_model_path}")
             return model
-        except Exception:
+        except Exception as e:
+            errors[cls.__name__] = e
             continue
+    for name, e in errors.items():
+        print(f"  {name} load error: {e}")
     raise RuntimeError(f"Failed to load {best_model_path} with RLPD or IQL")
 
 
