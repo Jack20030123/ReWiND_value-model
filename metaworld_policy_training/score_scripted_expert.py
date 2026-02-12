@@ -79,6 +79,11 @@ def run_scripted_expert(env_name, seed=0, max_attempts=15):
             if info["success"] and not success:
                 success = True
                 success_step = step
+                # Render the post-success frame before exiting
+                img = env.sim.render(*RESOLUTION, mode="offscreen", camera_name=CAMERA).astype(np.uint8)
+                imgs.append(img)
+                gt_rewards.append(r)
+                break
 
         if success:
             print(f"Scripted expert succeeded at step {success_step} (attempt {attempt}, seed {seed + attempt})")
@@ -258,19 +263,20 @@ def main():
 
     # --- Score trajectory with ReWiND ---
     print("\n=== Scoring Trajectory ===")
-    progress_all = score_trajectory(reward_model, raw_images, text_instruction)
-    progress_raw = progress_all[:num_frames]
+    progress_subsampled = score_trajectory(reward_model, raw_images, text_instruction)
+
+    # Reward model subsamples to max_length frames; interpolate back to full trajectory
+    max_len = reward_model.args.max_length
+    if num_frames > max_len:
+        sampled_indices = np.linspace(0, num_frames - 1, max_len).astype(int)
+        progress_raw = np.interp(np.arange(num_frames), sampled_indices, progress_subsampled[:max_len])
+    else:
+        progress_raw = progress_subsampled[:num_frames]
 
     # Compute diff
     progress_diff = np.diff(progress_raw)  # length = num_frames - 1
 
     print(f"  progress_raw length: {len(progress_raw)}, gt_rewards length: {len(gt_rewards)}")
-
-    # Align lengths (in case padding/subsample changed progress length)
-    n = min(len(progress_raw), len(gt_rewards))
-    progress_raw = progress_raw[:n]
-    gt_rewards = gt_rewards[:n]
-    progress_diff = np.diff(progress_raw)
 
     # --- Correlation analysis ---
     print("\n=== Computing Correlations ===")
@@ -307,7 +313,7 @@ def main():
     # --- Generate video ---
     print("\n=== Generating Video ===")
     video_path = os.path.join(args.output_dir, "trajectory_analysis.mp4")
-    generate_video(raw_images[:n], progress_raw, progress_diff, gt_rewards,
+    generate_video(raw_images, progress_raw, progress_diff, gt_rewards,
                    video_path, args.env_id, success_step, fps=args.fps)
 
     print("\nDone!")

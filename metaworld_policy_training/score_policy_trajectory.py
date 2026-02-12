@@ -47,9 +47,17 @@ def load_policy(best_model_path, env):
     errors = {}
     for cls in [RLPD, IQL]:
         try:
-            # load() is an instance method that uses self.__class__ internally
+            # load() is an instance method; create a minimal instance first
             dummy = cls.__new__(cls)
-            model = dummy.load(best_model_path, env=env)
+            model = dummy.load(
+                best_model_path,
+                env=env,
+                custom_objects={
+                    "observation_space": env.observation_space,
+                    "action_space": env.action_space,
+                },
+                load_torch_params_only=True,
+            )
             print(f"Loaded policy as {cls.__name__} from {best_model_path}")
             return model
         except Exception as e:
@@ -302,17 +310,17 @@ def main():
 
     # --- Score trajectory with ReWiND ---
     print("\n=== Scoring Trajectory ===")
-    progress_raw = score_trajectory(reward_model, raw_images, text_instruction)
-    progress_raw = progress_raw[:num_frames]
+    progress_subsampled = score_trajectory(reward_model, raw_images, text_instruction)
+
+    # Reward model subsamples to max_length frames; interpolate back to full trajectory
+    max_len = reward_model.args.max_length
+    if num_frames > max_len:
+        sampled_indices = np.linspace(0, num_frames - 1, max_len).astype(int)
+        progress_raw = np.interp(np.arange(num_frames), sampled_indices, progress_subsampled[:max_len])
+    else:
+        progress_raw = progress_subsampled[:num_frames]
 
     print(f"  progress_raw length: {len(progress_raw)}, gt_rewards length: {len(gt_rewards)}")
-
-    # Align lengths (in case padding/subsample changed progress length)
-    n = min(len(progress_raw), len(gt_rewards))
-    progress_raw = progress_raw[:n]
-    gt_rewards = gt_rewards[:n]
-    raw_images = raw_images[:n]
-    num_frames = n
 
     # Compute diff
     progress_diff = np.diff(progress_raw)  # length = num_frames - 1
