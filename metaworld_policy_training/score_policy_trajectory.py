@@ -47,7 +47,9 @@ def load_policy(best_model_path, env):
     errors = {}
     for cls in [RLPD, IQL]:
         try:
-            model = cls.load(best_model_path, env=env)
+            # load() is an instance method that uses self.__class__ internally
+            dummy = cls.__new__(cls)
+            model = dummy.load(best_model_path, env=env)
             print(f"Loaded policy as {cls.__name__} from {best_model_path}")
             return model
         except Exception as e:
