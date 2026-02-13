@@ -47,7 +47,7 @@ def load_policy(best_model_path, env):
     errors = {}
     for cls in [RLPD, IQL]:
         try:
-            # load() is an instance method; create a minimal instance first
+            # load() is an instance method that uses self.__class__ to construct a new model
             dummy = cls.__new__(cls)
             model = dummy.load(
                 best_model_path,
@@ -56,7 +56,6 @@ def load_policy(best_model_path, env):
                     "observation_space": env.observation_space,
                     "action_space": env.action_space,
                 },
-                load_torch_params_only=True,
             )
             print(f"Loaded policy as {cls.__name__} from {best_model_path}")
             return model
