@@ -117,7 +117,9 @@ def score_trajectory(reward_model, raw_images, text_instruction):
         ]
         embeddings = []
         for batch in dino_batches:
-            emb = reward_model.dino_vits14(batch.to(device)).squeeze().detach().cpu()
+            emb = reward_model.dino_vits14(batch.to(device)).detach().cpu()
+            if emb.dim() == 1:
+                emb = emb.unsqueeze(0)
             embeddings.append(emb)
         video_embeddings = torch.cat(embeddings)  # (num_frames, 768)
 
