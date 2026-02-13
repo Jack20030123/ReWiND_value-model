@@ -75,12 +75,14 @@ def run_episode(env, policy, max_steps=128):
     success = False
     success_step = None
 
+    episode_start = np.array([True])
     for step in range(max_steps):
         # Collect the raw RGB image before stepping
         raw_img = env.envs[0].render(mode="rgb_array")
         raw_images.append(raw_img)
 
-        action, _ = policy.predict(obs, deterministic=True)
+        action, _ = policy.predict(obs, deterministic=True, episode_start=episode_start)
+        episode_start = np.array([False])
         obs, reward, done, info = env.step(action)
         gt_rewards.append(reward[0])
 
