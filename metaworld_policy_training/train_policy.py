@@ -191,7 +191,7 @@ def main(cfg: DictConfig):
     logging_config = cfg.logging
     offline_config = cfg.offline_training
 
-    experiment_name = create_exp_name(cfg)
+    experiment_name = os.environ.get("WANDB_RUN_NAME", create_exp_name(cfg))
 
     ### Setup wandb and logging ###
     if logging_config.wandb:
