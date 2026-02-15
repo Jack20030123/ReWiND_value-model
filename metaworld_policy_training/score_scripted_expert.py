@@ -228,44 +228,39 @@ def generate_video(images, progress_raw, progress_diff, gt_rewards,
     print(f"Saved video to {video_path}")
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Score scripted expert trajectory with ReWiND")
-    parser.add_argument("--env_id", type=str, default="button-press-wall-v2")
-    parser.add_argument("--reward_model_path", type=str, required=True,
-                        help="Path to ReWiND checkpoint (.pth)")
-    parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--output_dir", type=str, default="score_output/scripted_expert")
-    parser.add_argument("--fps", type=int, default=20)
-    args = parser.parse_args()
+DEFAULT_ENVS = [
+    "window-close-v2",
+    "reach-wall-v2",
+    "faucet-close-v2",
+    "coffee-button-v2",
+    "button-press-wall-v2",
+    "door-lock-v2",
+    "handle-press-side-v2",
+    "sweep-into-v2",
+]
 
-    os.makedirs(args.output_dir, exist_ok=True)
 
-    text_instruction = environment_to_instruction[args.env_id]
-    print(f"Environment: {args.env_id}")
+def score_one_env(env_id, reward_model, seed, output_dir, fps):
+    """Run scripted expert, score with ReWiND, generate correlation report and video for one env."""
+    text_instruction = environment_to_instruction[env_id]
+    env_output_dir = os.path.join(output_dir, env_id)
+    os.makedirs(env_output_dir, exist_ok=True)
+
+    print(f"\nEnvironment: {env_id}")
     print(f"Instruction: {text_instruction}")
 
-    # --- Load ReWiND reward model ---
-    print("\n=== Loading ReWiND Reward Model ===")
-    reward_model = ReWiNDRewardModel(
-        model_load_path=args.reward_model_path,
-        camera_names=["image"],
-        device=str(device),
-        reward_at_every_step=True,
-    )
-
     # --- Run scripted expert ---
-    print("\n=== Running Scripted Expert ===")
+    print("  Running scripted expert...")
     raw_images, gt_rewards, success, success_step = run_scripted_expert(
-        args.env_id, seed=args.seed
+        env_id, seed=seed
     )
     num_frames = len(raw_images)
-    print(f"Episode: {num_frames} frames, {len(gt_rewards)} rewards, success={success}")
+    print(f"  Episode: {num_frames} frames, {len(gt_rewards)} rewards, success={success}")
 
     # --- Score trajectory with ReWiND ---
-    print("\n=== Scoring Trajectory ===")
+    print("  Scoring trajectory...")
     progress_subsampled = score_trajectory(reward_model, raw_images, text_instruction)
 
-    # Reward model subsamples to max_length frames; interpolate back to full trajectory
     max_len = reward_model.args.max_length
     if num_frames > max_len:
         sampled_indices = np.linspace(0, num_frames - 1, max_len).astype(int)
@@ -273,13 +268,12 @@ def main():
     else:
         progress_raw = progress_subsampled[:num_frames]
 
-    # Compute diff
-    progress_diff = np.diff(progress_raw)  # length = num_frames - 1
+    progress_diff = np.diff(progress_raw)
 
     print(f"  progress_raw length: {len(progress_raw)}, gt_rewards length: {len(gt_rewards)}")
 
     # --- Correlation analysis ---
-    print("\n=== Computing Correlations ===")
+    print("  Computing correlations...")
     results = []
 
     results.append(compute_correlations(
@@ -305,18 +299,50 @@ def main():
             "Diff Progress (pre-success)", "GT Reward (pre-success)"))
 
     for r in results:
-        print(f"  {r['label']} (n={r['n']}): Pearson={r['pearson']:.4f}, Spearman={r['spearman']:.4f}")
+        print(f"    {r['label']} (n={r['n']}): Pearson={r['pearson']:.4f}, Spearman={r['spearman']:.4f}")
 
-    corr_path = os.path.join(args.output_dir, "correlation_analysis.txt")
-    write_correlation_report(corr_path, args.env_id, results, success, success_step, num_frames)
+    corr_path = os.path.join(env_output_dir, "correlation_analysis.txt")
+    write_correlation_report(corr_path, env_id, results, success, success_step, num_frames)
 
     # --- Generate video ---
-    print("\n=== Generating Video ===")
-    video_path = os.path.join(args.output_dir, "trajectory_analysis.mp4")
+    print("  Generating video...")
+    video_path = os.path.join(env_output_dir, "trajectory_analysis.mp4")
     generate_video(raw_images, progress_raw, progress_diff, gt_rewards,
-                   video_path, args.env_id, success_step, fps=args.fps)
+                   video_path, env_id, success_step, fps=fps)
 
-    print("\nDone!")
+    print(f"  Done: {env_id}")
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Score scripted expert trajectory with ReWiND")
+    parser.add_argument("--env_id", type=str, nargs="*", default=None,
+                        help="One or more env IDs. If omitted, runs all 8 default envs.")
+    parser.add_argument("--reward_model_path", type=str, required=True,
+                        help="Path to ReWiND checkpoint (.pth)")
+    parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--output_dir", type=str, default="score_output/scripted_expert")
+    parser.add_argument("--fps", type=int, default=20)
+    args = parser.parse_args()
+
+    env_ids = args.env_id if args.env_id else DEFAULT_ENVS
+    print(f"Will score {len(env_ids)} environment(s): {env_ids}")
+
+    # --- Load ReWiND reward model (once) ---
+    print("\n=== Loading ReWiND Reward Model ===")
+    reward_model = ReWiNDRewardModel(
+        model_load_path=args.reward_model_path,
+        camera_names=["image"],
+        device=str(device),
+        reward_at_every_step=True,
+    )
+
+    for i, env_id in enumerate(env_ids):
+        print(f"\n{'='*60}")
+        print(f"[{i+1}/{len(env_ids)}] {env_id}")
+        print(f"{'='*60}")
+        score_one_env(env_id, reward_model, args.seed, args.output_dir, args.fps)
+
+    print(f"\nAll done! Results in {args.output_dir}/")
 
 
 if __name__ == "__main__":
