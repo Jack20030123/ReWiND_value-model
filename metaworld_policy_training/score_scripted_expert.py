@@ -5,8 +5,9 @@ Evaluates the reward model itself, independent of any trained RL policy.
 Uses MetaWorld's built-in scripted policies to generate guaranteed-success trajectories.
 
 Generates:
-  1. correlation_analysis.txt  – Pearson/Spearman between reward model outputs and GT reward
-  2. trajectory_analysis.mp4   – 2x2 video (env | raw progress | diff progress | GT reward)
+  1. correlation_analysis.txt  – Pearson/Spearman for all-step reward_hat / reward_hat_diff / diff099 / diff0999
+  2. step_data.csv             – Per-step reward_hat / diff / GT reward / task progress values
+  3. trajectory_analysis.mp4   – 2x3 video panels for qualitative inspection
 
 Usage (run from metaworld_policy_training/):
     python score_scripted_expert.py \
@@ -64,6 +65,7 @@ def run_scripted_expert(env_name, seed=0, max_attempts=15):
 
         imgs = []
         gt_rewards = []
+        task_progress = []
         success = False
         success_step = None
 
@@ -75,6 +77,7 @@ def run_scripted_expert(env_name, seed=0, max_attempts=15):
             a = np.clip(a, env.action_space.low, env.action_space.high)
             o, r, done, info = env.step(a)
             gt_rewards.append(r)
+            task_progress.append(info.get("in_place_reward", 0.0))
 
             if info["success"] and not success:
                 success = True
@@ -83,14 +86,15 @@ def run_scripted_expert(env_name, seed=0, max_attempts=15):
                 img = env.sim.render(*RESOLUTION, mode="offscreen", camera_name=CAMERA).astype(np.uint8)
                 imgs.append(img)
                 gt_rewards.append(r)
+                task_progress.append(info.get("in_place_reward", 0.0))
                 break
 
         if success:
             print(f"Scripted expert succeeded at step {success_step} (attempt {attempt}, seed {seed + attempt})")
-            return imgs, np.array(gt_rewards), success, success_step
+            return imgs, np.array(gt_rewards), np.array(task_progress), success, success_step
 
     print(f"WARNING: scripted expert failed to succeed in {max_attempts} attempts")
-    return imgs, np.array(gt_rewards), False, None
+    return imgs, np.array(gt_rewards), np.array(task_progress), False, None
 
 
 def score_trajectory(reward_model, raw_images, text_instruction):
@@ -143,6 +147,18 @@ def write_correlation_report(path, env_id, results, success, success_step, num_f
             f.write(f"  Pearson:  {r['pearson']:.6f} (p={r['p_pearson']:.2e})\n")
             f.write(f"  Spearman: {r['spearman']:.6f}\n\n")
     print(f"Saved correlation analysis to {path}")
+
+
+def save_step_data_csv(path, reward_hat, reward_hat_diff_padded, gt_reward, task_progress, diff099_padded, diff0999_padded):
+    with open(path, "w") as f:
+        f.write("step,reward_hat,reward_hat_diff_padded,gt_reward,task_progress,diff099_padded,diff0999_padded\n")
+        for i in range(len(reward_hat)):
+            f.write(
+                f"{i},{reward_hat[i]:.6f},{reward_hat_diff_padded[i]:.6f},"
+                f"{gt_reward[i]:.6f},{task_progress[i]:.6f},"
+                f"{diff099_padded[i]:.6f},{diff0999_padded[i]:.6f}\n"
+            )
+    print(f"Saved per-step data to {path}")
 
 
 def generate_video(images, progress_raw, progress_diff, progress_diff_099, progress_diff_0999, gt_rewards,
@@ -287,7 +303,7 @@ def score_one_env(env_id, reward_model, seed, output_dir, fps):
 
     # --- Run scripted expert ---
     print("  Running scripted expert...")
-    raw_images, gt_rewards, success, success_step = run_scripted_expert(
+    raw_images, gt_rewards, task_progress, success, success_step = run_scripted_expert(
         env_id, seed=seed
     )
     num_frames = len(raw_images)
@@ -308,55 +324,38 @@ def score_one_env(env_id, reward_model, seed, output_dir, fps):
     progress_diff_099 = 100 * (0.99 * progress_raw[1:] - progress_raw[:-1])
     progress_diff_0999 = 1000 * (0.999 * progress_raw[1:] - progress_raw[:-1])
 
+    reward_hat = progress_raw
+    reward_hat_diff = progress_diff
+    gt_rewards_for_diff = gt_rewards[:-1]
+    progress_diffs = np.diff(task_progress)
+
+    reward_hat_diff_padded = np.concatenate([[0.0], reward_hat_diff])
+    diff099_padded = np.concatenate([[0.0], progress_diff_099])
+    diff0999_padded = np.concatenate([[0.0], progress_diff_0999])
+
     print(f"  progress_raw length: {len(progress_raw)}, gt_rewards length: {len(gt_rewards)}")
 
     # --- Correlation analysis ---
     print("  Computing correlations...")
     results = []
 
-    results.append(compute_correlations(
-        progress_raw, gt_rewards, "Raw Progress", "GT Reward"))
-
-    results.append(compute_correlations(
-        progress_diff, gt_rewards[1:], "Diff Progress", "GT Reward"))
-
-    results.append(compute_correlations(
-        progress_diff_099, gt_rewards[1:], "100*(0.99 Diff Progress)", "GT Reward"))
-
-    results.append(compute_correlations(
-        progress_diff_0999, gt_rewards[1:], "1000*(0.999 Diff Progress)", "GT Reward"))
-
-    n30 = min(30, num_frames)
-    results.append(compute_correlations(
-        progress_raw[:n30], gt_rewards[:n30], "Raw Progress (first 30)", "GT Reward (first 30)"))
-
-    n30d = min(30, len(progress_diff))
-    results.append(compute_correlations(
-        progress_diff[:n30d], gt_rewards[1:n30d + 1], "Diff Progress (first 30)", "GT Reward (first 30)"))
-    results.append(compute_correlations(
-        progress_diff_099[:n30d], gt_rewards[1:n30d + 1], "100*(0.99 Diff Progress) (first 30)", "GT Reward (first 30)"))
-    results.append(compute_correlations(
-        progress_diff_0999[:n30d], gt_rewards[1:n30d + 1], "1000*(0.999 Diff Progress) (first 30)", "GT Reward (first 30)"))
-
-    if success_step is not None and success_step > 2:
-        results.append(compute_correlations(
-            progress_raw[:success_step + 1], gt_rewards[:success_step + 1],
-            "Raw Progress (pre-success)", "GT Reward (pre-success)"))
-        results.append(compute_correlations(
-            progress_diff[:success_step], gt_rewards[1:success_step + 1],
-            "Diff Progress (pre-success)", "GT Reward (pre-success)"))
-        results.append(compute_correlations(
-            progress_diff_099[:success_step], gt_rewards[1:success_step + 1],
-            "100*(0.99 Diff Progress) (pre-success)", "GT Reward (pre-success)"))
-        results.append(compute_correlations(
-            progress_diff_0999[:success_step], gt_rewards[1:success_step + 1],
-            "1000*(0.999 Diff Progress) (pre-success)", "GT Reward (pre-success)"))
+    results.append(compute_correlations(reward_hat, gt_rewards, "reward_hat", "GT Reward"))
+    results.append(compute_correlations(reward_hat, task_progress, "reward_hat", "Task Progress"))
+    results.append(compute_correlations(reward_hat_diff, gt_rewards_for_diff, "reward_hat_diff", "GT Reward"))
+    results.append(compute_correlations(reward_hat_diff, progress_diffs, "reward_hat_diff", "Progress Diff"))
+    results.append(compute_correlations(progress_diff_099, gt_rewards_for_diff, "diff099", "GT Reward"))
+    results.append(compute_correlations(progress_diff_099, progress_diffs, "diff099", "Progress Diff"))
+    results.append(compute_correlations(progress_diff_0999, gt_rewards_for_diff, "diff0999", "GT Reward"))
+    results.append(compute_correlations(progress_diff_0999, progress_diffs, "diff0999", "Progress Diff"))
 
     for r in results:
         print(f"    {r['label']} (n={r['n']}): Pearson={r['pearson']:.4f}, Spearman={r['spearman']:.4f}")
 
     corr_path = os.path.join(env_output_dir, "correlation_analysis.txt")
     write_correlation_report(corr_path, env_id, results, success, success_step, num_frames)
+
+    csv_path = os.path.join(env_output_dir, "step_data.csv")
+    save_step_data_csv(csv_path, reward_hat, reward_hat_diff_padded, gt_rewards, task_progress, diff099_padded, diff0999_padded)
 
     # --- Generate video ---
     print("  Generating video...")
