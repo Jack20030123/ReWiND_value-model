@@ -62,6 +62,8 @@ module load mesa-glu/9.0.2
 module load glew/2.2.0
 module load glx/1.4
 
+export QT_XCB_GL_INTEGRATION="${QT_XCB_GL_INTEGRATION:-none}"
+
 source /apps/conda/miniforge3/25.11.0-1/etc/profile.d/conda.sh
 conda activate "${CONDA_ENV}"
 
@@ -71,7 +73,6 @@ export WANDB_CACHE_DIR="${SCRATCH_DIR}/.cache/wandb"
 export WANDB_CONFIG_DIR="${SCRATCH_DIR}/.config/wandb"
 export WANDB_MODE="${WANDB_MODE:-online}"
 export TOKENIZERS_PARALLELISM=false
-export QT_XCB_GL_INTEGRATION=none
 export LD_PRELOAD="$(g++ -print-file-name=libstdc++.so.6)"
 export MUJOCO_GL=egl
 export MUJOCO_PY_MUJOCO_PATH="${HOME}/.mujoco/mujoco210"
