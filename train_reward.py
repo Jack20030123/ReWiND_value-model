@@ -87,8 +87,8 @@ def main(args):
     h5_eval_file = os.path.join(args.h5_folder_path, "metaworld_embeddings_eval.h5")
     h5_train_eval_file = h5py.File(h5_train_eval_file, "r")
     h5_eval_file = h5py.File(h5_eval_file, "r")
-    h5_close_success_file = "datasets/metaworld_dino_embeddings_eval_close_succ.h5"
-    h5_all_fail_file = "datasets/metaworld_dino_embeddings_eval_all_fail.h5"
+    h5_close_success_file = os.path.join(args.h5_folder_path, "metaworld_dino_embeddings_eval_close_succ.h5")
+    h5_all_fail_file = os.path.join(args.h5_folder_path, "metaworld_dino_embeddings_eval_all_fail.h5")
     h5_close_success_file = h5py.File(h5_close_success_file, "r")
     h5_all_fail_file = h5py.File(h5_all_fail_file, "r")
     task_list = "utils/new_task_v2.json"

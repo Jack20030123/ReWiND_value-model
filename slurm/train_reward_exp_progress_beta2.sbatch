@@ -42,6 +42,21 @@ if [ ! -f "${DATA_DIR}/metaworld_embeddings_train.h5" ]; then
   exit 2
 fi
 
+if [ ! -f "${DATA_DIR}/metaworld_embeddings_eval.h5" ]; then
+  echo "ERROR: Missing ${DATA_DIR}/metaworld_embeddings_eval.h5" >&2
+  exit 2
+fi
+
+if [ ! -f "${DATA_DIR}/metaworld_dino_embeddings_eval_close_succ.h5" ]; then
+  echo "ERROR: Missing ${DATA_DIR}/metaworld_dino_embeddings_eval_close_succ.h5" >&2
+  exit 2
+fi
+
+if [ ! -f "${DATA_DIR}/metaworld_dino_embeddings_eval_all_fail.h5" ]; then
+  echo "ERROR: Missing ${DATA_DIR}/metaworld_dino_embeddings_eval_all_fail.h5" >&2
+  exit 2
+fi
+
 if [ ! -f "${DATA_DIR}/full_openx_embeddings_v2_train.h5" ]; then
   echo "ERROR: Missing ${DATA_DIR}/full_openx_embeddings_v2_train.h5" >&2
   exit 2
