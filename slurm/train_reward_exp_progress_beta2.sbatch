@@ -11,16 +11,16 @@
 
 # Train the ReWiND reward model on normalized exponential progress labels.
 # Run from the git clone that contains the updated exponential-label code.
-# DATA_DIR/CONDA_ENV can still point to the existing non-git project2 directory.
+# DATA_DIR points to scratch1 data; CONDA_ENV defaults to the scratch1 env.
 # Output checkpoint:
 #   /scratch1/haobaizh/rewind_valuemodel/checkpoints/rewind_metaworld_exp_beta2_epoch_*.pth
 
 set -euo pipefail
 
 CODE_DIR="${CODE_DIR:-${SLURM_SUBMIT_DIR:-$(pwd)}}"
-DATA_DIR="${DATA_DIR:-/project2/biyik_1165/haobaizh/rewind_valuemodel/datasets}"
+DATA_DIR="${DATA_DIR:-/scratch1/haobaizh/rewind_valuemodel/datasets}"
 SCRATCH_DIR="${REWIND_SCRATCH_DIR:-/scratch1/haobaizh/rewind_valuemodel}"
-CONDA_ENV="${CONDA_ENV:-/project2/biyik_1165/haobaizh/rewind_valuemodel/conda_envs/rewind}"
+CONDA_ENV="${CONDA_ENV:-/scratch1/haobaizh/conda_envs/rewind}"
 WANDB_ENTITY="${WANDB_ENTITY:-rewind-valuemodel}"
 WANDB_PROJECT="${WANDB_PROJECT:-rewind-reward-training}"
 BETA="${BETA:-2.0}"
