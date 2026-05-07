@@ -32,6 +32,15 @@ class ReWiNDVideoDataset(Dataset):
         return lang_embedding
     
 
+    def _apply_progress_label_shape(self, progress):
+        if not getattr(self.args, "use_exponential_progress", False):
+            return progress
+        beta = float(getattr(self.args, "exponential_beta", 2.0))
+        if abs(beta) < 1e-12:
+            return progress
+        return (np.exp(beta * progress) - 1.0) / (np.exp(beta) - 1.0)
+
+
     def sample_negative_text_feature(self, key):
         random_key = random.choice(self.keys)
         while random_key == key:
@@ -64,6 +73,7 @@ class ReWiNDVideoDataset(Dataset):
         full_length = len(full_frames)
         video_progress = np.arange(0, video_frames.shape[0]) + 1
         video_progress = video_progress / full_length
+        video_progress = self._apply_progress_label_shape(video_progress)
 
         if self.args.subsample_video:
             video_frames = self.padding_video(video_frames, self.args.max_length)
@@ -106,6 +116,7 @@ class ReWiNDVideoDataset(Dataset):
 
         video_frames = np.concatenate([video_frames, reverse_frame], axis=0)
         progress = np.concatenate([progress, reverse_progress], axis=0)
+        progress = self._apply_progress_label_shape(progress)
 
         video_frames = th.from_numpy(video_frames).float()
 

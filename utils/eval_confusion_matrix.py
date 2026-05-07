@@ -52,12 +52,11 @@ def plot_matrix_as_image_for_paper(args, matrix, names, set, text, epoch = None,
 
     wandb.log({f"confusion_matrix/{set}_confusion_matrix_Rewind": wandb.Image(fig, caption=f"Epoch {epoch}")})
     if args.pdf:
-        folder_name = run_name
-        if not os.path.exists(f"confusion_matrix_for_paper"):
-            os.makedirs(f"confusion_matrix_for_paper")
-        if not os.path.exists(f"confusion_matrix_for_paper/{folder_name}"):
-            os.makedirs(f"confusion_matrix_for_paper/{folder_name}")
-        pdf_path = f"confusion_matrix_for_paper/{folder_name}/confusion_matrix_{set}_epoch_{epoch}.pdf"
+        folder_name = run_name or "default"
+        base_dir = getattr(args, "confusion_matrix_dir", "confusion_matrix_for_paper")
+        run_dir = os.path.join(base_dir, folder_name)
+        os.makedirs(run_dir, exist_ok=True)
+        pdf_path = os.path.join(run_dir, f"confusion_matrix_{set}_epoch_{epoch}.pdf")
         plt.savefig(pdf_path, bbox_inches="tight")
     plt.close(fig)  # Close the figure to free memory
 
@@ -108,7 +107,5 @@ def plot_confusion_matrix(h5_file, set, rewind_model, args, epoch = None, run_na
         pred_org_progress_list.append(progress_org_list)
 
     plot_matrix_as_image_for_paper(args, pred_org_progress_list, eval_envs, set, text_list, epoch = epoch, run_name = run_name)
-
-
 
 

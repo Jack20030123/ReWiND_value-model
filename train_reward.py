@@ -18,6 +18,33 @@ from utils.update_utils import train_step_fn, CosineWithMinLRScheduler
 from utils.eval_confusion_matrix import plot_confusion_matrix
 
 os.environ["TOKENIZERS_PARALLELISM"] = "False"
+DEFAULT_SCRATCH_ROOT = os.environ.get("REWIND_SCRATCH_DIR", "/scratch1/haobaizh/rewind_valuemodel")
+
+
+def setup_wandb_runtime_dirs(wandb_dir):
+    scratch_defaults = {
+        "WANDB_DIR": wandb_dir,
+        "WANDB_CACHE_DIR": os.path.join(DEFAULT_SCRATCH_ROOT, ".cache", "wandb"),
+        "WANDB_CONFIG_DIR": os.path.join(DEFAULT_SCRATCH_ROOT, ".config", "wandb"),
+    }
+    home_defaults = {
+        "WANDB_DIR": os.path.join(os.path.expanduser("~"), "wandb"),
+        "WANDB_CACHE_DIR": os.path.join(os.path.expanduser("~"), ".cache", "wandb"),
+        "WANDB_CONFIG_DIR": os.path.join(os.path.expanduser("~"), ".config", "wandb"),
+    }
+    for key, scratch_path in scratch_defaults.items():
+        current = os.environ.get(key)
+        home_default = home_defaults[key]
+        if current and os.path.abspath(current) != os.path.abspath(home_default):
+            continue
+        os.makedirs(scratch_path, exist_ok=True)
+        os.environ[key] = scratch_path
+
+
+def resolve_scratch_path(path):
+    if not path or os.path.isabs(path):
+        return path
+    return os.path.join(DEFAULT_SCRATCH_ROOT, path)
 
 
 
@@ -26,6 +53,9 @@ def main(args):
     random.seed(args.seed)
     torch.manual_seed(args.seed)
     torch.backends.cudnn.deterministic = True
+    args.checkpoint_dir = resolve_scratch_path(args.checkpoint_dir)
+    args.wandb_dir = resolve_scratch_path(args.wandb_dir)
+    args.confusion_matrix_dir = resolve_scratch_path(args.confusion_matrix_dir)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -35,10 +65,16 @@ def main(args):
     # TODO: Set your own WandB entity and project name
     WANDB_ENTITY_NAME = args.wandb_entity
     WANDB_PROJECT_NAME = args.wandb_project
+    if args.wandb_dir:
+        setup_wandb_runtime_dirs(args.wandb_dir)
 
     experiment_name = "ReWiND_Release_" + str(args.extra_data_type)
+    if args.use_exponential_progress:
+        experiment_name += f"_exp_beta{args.exponential_beta:g}"
 
     group_name = "ReWind_Release_" + args.extra_data_type 
+    if args.use_exponential_progress:
+        group_name += "_exponential_progress"
     run = wandb.init(
         entity=WANDB_ENTITY_NAME,
         project=WANDB_PROJECT_NAME,
@@ -123,8 +159,7 @@ def main(args):
                                 epoch=epoch)
         
         # save checkpoint
-        if os.path.exists("checkpoints") is False:
-            os.mkdir("checkpoints")
+        os.makedirs(args.checkpoint_dir, exist_ok=True)
         save_dict = {
             "args": args,
             "model_state_dict": rewind_model.state_dict(),
@@ -132,7 +167,12 @@ def main(args):
             "scheduler_state_dict": scheduler.state_dict(),
             "epoch": epoch,
         }
-        torch.save(save_dict, f"checkpoints/rewind_{args.extra_data_type}_epoch_{epoch}.pth")
+        ckpt_tag = args.extra_data_type
+        if args.use_exponential_progress:
+            ckpt_tag += f"_exp_beta{args.exponential_beta:g}"
+        checkpoint_path = os.path.join(args.checkpoint_dir, f"rewind_{ckpt_tag}_epoch_{epoch}.pth")
+        torch.save(save_dict, checkpoint_path)
+        print(f"Saved checkpoint to {checkpoint_path}")
         
 
 
@@ -159,7 +199,19 @@ if __name__ == "__main__":
     argparser.add_argument('--extra_data_ratio', type=float, default=0.2)
     argparser.add_argument('--eval_interval', type=int, default=1)
     argparser.add_argument('--rewind_ratio', type=float, default=0.8)
+    argparser.add_argument('--checkpoint_dir', type=str,
+                           default=os.path.join(DEFAULT_SCRATCH_ROOT, 'checkpoints'),
+                           help="Directory for newly saved ReWiND reward checkpoints")
+    argparser.add_argument('--wandb_dir', type=str,
+                           default=os.path.join(DEFAULT_SCRATCH_ROOT, 'wandb'),
+                           help="Directory for local WandB files")
+    argparser.add_argument('--confusion_matrix_dir', type=str,
+                           default=os.path.join(DEFAULT_SCRATCH_ROOT, 'confusion_matrix_for_paper'),
+                           help="Directory for optional confusion-matrix PDFs")
+    argparser.add_argument('--use_exponential_progress', action='store_true',
+                           help="Train on normalized exponential progress labels instead of linear t / H labels")
+    argparser.add_argument('--exponential_beta', type=float, default=2.0,
+                           help="Beta for normalized exponential progress labels")
     argparser.add_argument('--pdf', action='store_true', help="Whether to save confusion matrix as PDF")
     args = argparser.parse_args()
     main(args)
-
