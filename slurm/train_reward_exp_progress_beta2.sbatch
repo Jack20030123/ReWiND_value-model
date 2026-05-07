@@ -118,6 +118,61 @@ export MUJOCO_PY_MUJOCO_PATH="${HOME}/.mujoco/mujoco210"
 GCC_LIBDIR="$(dirname "$(g++ -print-file-name=libstdc++.so.6)")"
 export LD_LIBRARY_PATH="${GCC_LIBDIR}:${HOME}/.mujoco/mujoco210/bin:/usr/lib/nvidia:${LD_LIBRARY_PATH:-}"
 
+if [ "${STAGE_DATA}" = "1" ]; then
+  echo "========== Verify staged H5 data =========="
+  export DATA_DIR TRAIN_DATA_DIR
+  python - <<'PY'
+import os
+import h5py
+
+src_dir = os.environ["DATA_DIR"]
+dst_dir = os.environ["TRAIN_DATA_DIR"]
+files = [
+    "full_openx_embeddings_v2_train.h5",
+    "metaworld_embeddings_train.h5",
+    "metaworld_embeddings_eval.h5",
+    "metaworld_dino_embeddings_eval_close_succ.h5",
+    "metaworld_dino_embeddings_eval_all_fail.h5",
+]
+
+
+def describe_h5_object(obj):
+    if hasattr(obj, "shape"):
+        return ("dataset", tuple(obj.shape), str(obj.dtype))
+    keys = sorted(list(obj.keys()))
+    return ("group", len(keys), tuple(keys[:3]), tuple(keys[-3:]))
+
+
+for file_name in files:
+    src_path = os.path.join(src_dir, file_name)
+    dst_path = os.path.join(dst_dir, file_name)
+    src_size = os.path.getsize(src_path)
+    dst_size = os.path.getsize(dst_path)
+    print(f"VERIFY {file_name}: src_size={src_size} dst_size={dst_size}", flush=True)
+    if src_size != dst_size:
+        raise RuntimeError(f"size mismatch for {file_name}")
+
+    with h5py.File(src_path, "r") as src_h5, h5py.File(dst_path, "r") as dst_h5:
+        src_keys = sorted(list(src_h5.keys()))
+        dst_keys = sorted(list(dst_h5.keys()))
+        if src_keys != dst_keys:
+            raise RuntimeError(f"top-level key mismatch for {file_name}")
+
+        sample_keys = src_keys[:3] + src_keys[-3:]
+        for key in sample_keys:
+            src_desc = describe_h5_object(src_h5[key])
+            dst_desc = describe_h5_object(dst_h5[key])
+            if src_desc != dst_desc:
+                raise RuntimeError(
+                    f"object metadata mismatch for {file_name}:{key}: "
+                    f"{src_desc} != {dst_desc}"
+                )
+    print(f"VERIFY_OK {file_name}", flush=True)
+
+print("STAGED_H5_VERIFY_OK", flush=True)
+PY
+fi
+
 cd "${CODE_DIR}"
 
 echo "========== Train exponential ReWiND reward model =========="
