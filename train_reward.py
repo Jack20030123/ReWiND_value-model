@@ -49,6 +49,12 @@ def resolve_scratch_path(path):
 
 
 def main(args):
+    if args.use_pairwise_progress_diff_loss and args.use_exponential_progress:
+        raise ValueError(
+            "--use_pairwise_progress_diff_loss is meant for linear progress-difference "
+            "supervision; do not combine it with --use_exponential_progress."
+        )
+
     np.random.seed(args.seed)
     random.seed(args.seed)
     torch.manual_seed(args.seed)
@@ -71,10 +77,14 @@ def main(args):
     experiment_name = "ReWiND_Release_" + str(args.extra_data_type)
     if args.use_exponential_progress:
         experiment_name += f"_exp_beta{args.exponential_beta:g}"
+    if args.use_pairwise_progress_diff_loss:
+        experiment_name += "_pairwise_diff_loss"
 
     group_name = "ReWind_Release_" + args.extra_data_type 
     if args.use_exponential_progress:
         group_name += "_exponential_progress"
+    if args.use_pairwise_progress_diff_loss:
+        group_name += "_pairwise_diff_loss"
     run = wandb.init(
         entity=WANDB_ENTITY_NAME,
         project=WANDB_PROJECT_NAME,
@@ -170,6 +180,8 @@ def main(args):
         ckpt_tag = args.extra_data_type
         if args.use_exponential_progress:
             ckpt_tag += f"_exp_beta{args.exponential_beta:g}"
+        if args.use_pairwise_progress_diff_loss:
+            ckpt_tag += "_pairwise_diff_loss"
         checkpoint_path = os.path.join(args.checkpoint_dir, f"rewind_{ckpt_tag}_epoch_{epoch}.pth")
         torch.save(save_dict, checkpoint_path)
         print(f"Saved checkpoint to {checkpoint_path}")
@@ -212,6 +224,8 @@ if __name__ == "__main__":
                            help="Train on normalized exponential progress labels instead of linear t / H labels")
     argparser.add_argument('--exponential_beta', type=float, default=2.0,
                            help="Beta for normalized exponential progress labels")
+    argparser.add_argument('--use_pairwise_progress_diff_loss', action='store_true',
+                           help="Train Phi(s) with MSE(Phi(s_{t+k}) - Phi(s_t), k / T) instead of direct progress regression")
     argparser.add_argument('--pdf', action='store_true', help="Whether to save confusion matrix as PDF")
     args = argparser.parse_args()
     main(args)

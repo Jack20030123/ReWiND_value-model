@@ -80,10 +80,16 @@ def train_step_fn(args, batch, rewind_model, optimizer, scheduler):
     rest_extra_progress_pred = extra_progress_pred[~extra_target.bool()]
     rest_extra_progress_target = extra_progress_target[~extra_target.bool()]
 
-    openx_progress_loss = mse_loss(valid_openx_progress_pred[:,1:].squeeze(), valid_openx_progress_target[:,1:])
-    extra_progress_loss = mse_loss(valid_extra_progress_pred[:,1:].squeeze(), valid_extra_progress_target[:,1:])
-    rest_openx_progress_loss = mse_loss(rest_openx_progress_pred[:,1:].squeeze(), rest_openx_progress_target[:,1:])
-    rest_extra_progress_loss = mse_loss(rest_extra_progress_pred[:,1:].squeeze(), rest_extra_progress_target[:,1:])
+    if getattr(args, "use_pairwise_progress_diff_loss", False):
+        openx_progress_loss = pairwise_progress_diff_loss(valid_openx_progress_pred, valid_openx_progress_target)
+        extra_progress_loss = pairwise_progress_diff_loss(valid_extra_progress_pred, valid_extra_progress_target)
+        rest_openx_progress_loss = pairwise_progress_diff_loss(rest_openx_progress_pred, rest_openx_progress_target)
+        rest_extra_progress_loss = pairwise_progress_diff_loss(rest_extra_progress_pred, rest_extra_progress_target)
+    else:
+        openx_progress_loss = mse_loss(valid_openx_progress_pred[:,1:].squeeze(), valid_openx_progress_target[:,1:])
+        extra_progress_loss = mse_loss(valid_extra_progress_pred[:,1:].squeeze(), valid_extra_progress_target[:,1:])
+        rest_openx_progress_loss = mse_loss(rest_openx_progress_pred[:,1:].squeeze(), rest_openx_progress_target[:,1:])
+        rest_extra_progress_loss = mse_loss(rest_extra_progress_pred[:,1:].squeeze(), rest_extra_progress_target[:,1:])
 
     total_len = len(openx_progress_pred) + len(extra_progress_pred) + len(rest_openx_progress_pred) + len(rest_extra_progress_pred)
 
@@ -104,6 +110,26 @@ def train_step_fn(args, batch, rewind_model, optimizer, scheduler):
         "train/progress_loss": loss.item(),
         "lr": optimizer.param_groups[0]["lr"],
     }
+    if getattr(args, "use_pairwise_progress_diff_loss", False):
+        wandb_log["train/pairwise_progress_diff_loss"] = loss.item()
     wandb.log(wandb_log)
     return loss.item()
 
+
+def pairwise_progress_diff_loss(progress_pred, progress_target):
+    if progress_pred.shape[0] == 0:
+        return progress_pred.sum() * 0.0
+
+    pred = progress_pred[:, 1:].squeeze(-1)
+    target = progress_target[:, 1:].float()
+    seq_len = pred.shape[1]
+    if seq_len < 2:
+        return mse_loss(pred, target)
+
+    pred_diff = pred.unsqueeze(1) - pred.unsqueeze(2)
+    target_diff = target.unsqueeze(1) - target.unsqueeze(2)
+    pair_mask = torch.triu(
+        torch.ones(seq_len, seq_len, dtype=torch.bool, device=pred.device),
+        diagonal=1,
+    )
+    return mse_loss(pred_diff[:, pair_mask], target_diff[:, pair_mask])

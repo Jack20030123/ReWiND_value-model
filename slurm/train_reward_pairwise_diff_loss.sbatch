@@ -1,0 +1,187 @@
+#!/usr/bin/env bash
+#SBATCH --job-name=rw_pairdiff
+#SBATCH --account=biyik_1165
+#SBATCH --partition=gpu
+#SBATCH --gres=gpu:1
+#SBATCH --cpus-per-task=4
+#SBATCH --mem=64G
+#SBATCH --time=24:00:00
+#SBATCH --output=/scratch1/haobaizh/rewind_valuemodel/slurm_logs/%x_%j.out
+#SBATCH --error=/scratch1/haobaizh/rewind_valuemodel/slurm_logs/%x_%j.err
+
+# Train the ReWiND reward model with pairwise progress-difference supervision:
+#   MSE(Phi(s_{t+k}) - Phi(s_t), k / T)
+# Output checkpoint:
+#   /scratch1/haobaizh/rewind_valuemodel/checkpoints/rewind_metaworld_pairwise_diff_loss_epoch_*.pth
+
+set -euo pipefail
+
+CODE_DIR="${CODE_DIR:-${SLURM_SUBMIT_DIR:-$(pwd)}}"
+DATA_DIR="${DATA_DIR:-/scratch1/haobaizh/rewind_valuemodel/datasets}"
+SCRATCH_DIR="${REWIND_SCRATCH_DIR:-/scratch1/haobaizh/rewind_valuemodel}"
+CONDA_ENV="${CONDA_ENV:-/scratch1/haobaizh/conda_envs/rewind}"
+WANDB_ENTITY="${WANDB_ENTITY:-rewind-valuemodel}"
+WANDB_PROJECT="${WANDB_PROJECT:-rewind-reward-training}"
+STAGE_DATA="${STAGE_DATA:-1}"
+
+if [ ! -f "${CODE_DIR}/train_reward.py" ]; then
+  echo "ERROR: CODE_DIR does not contain train_reward.py: ${CODE_DIR}" >&2
+  echo "Submit from the git clone, or set CODE_DIR=/path/to/ReWiND-value-model-clone." >&2
+  exit 2
+fi
+
+if ! grep -q "use_pairwise_progress_diff_loss" "${CODE_DIR}/train_reward.py"; then
+  echo "ERROR: CODE_DIR has old train_reward.py without --use_pairwise_progress_diff_loss." >&2
+  echo "Run this job from the updated GitHub clone." >&2
+  exit 2
+fi
+
+for file_name in \
+  metaworld_embeddings_train.h5 \
+  metaworld_embeddings_eval.h5 \
+  metaworld_dino_embeddings_eval_close_succ.h5 \
+  metaworld_dino_embeddings_eval_all_fail.h5 \
+  full_openx_embeddings_v2_train.h5
+do
+  if [ ! -f "${DATA_DIR}/${file_name}" ]; then
+    echo "ERROR: Missing ${DATA_DIR}/${file_name}" >&2
+    exit 2
+  fi
+done
+
+mkdir -p \
+  "${SCRATCH_DIR}/slurm_logs" \
+  "${SCRATCH_DIR}/checkpoints" \
+  "${SCRATCH_DIR}/wandb" \
+  "${SCRATCH_DIR}/.cache/wandb" \
+  "${SCRATCH_DIR}/.config/wandb" \
+  "${SCRATCH_DIR}/confusion_matrix_for_paper"
+
+TRAIN_DATA_DIR="${DATA_DIR}"
+if [ "${STAGE_DATA}" = "1" ]; then
+  TRAIN_DATA_DIR="${TMPDIR:-/tmp}/rewind_valuemodel_datasets"
+  mkdir -p "${TRAIN_DATA_DIR}"
+
+  echo "========== Stage H5 data to local TMPDIR =========="
+  echo "source=${DATA_DIR}"
+  echo "target=${TRAIN_DATA_DIR}"
+  date
+  for file_name in \
+    full_openx_embeddings_v2_train.h5 \
+    metaworld_embeddings_train.h5 \
+    metaworld_embeddings_eval.h5 \
+    metaworld_dino_embeddings_eval_close_succ.h5 \
+    metaworld_dino_embeddings_eval_all_fail.h5
+  do
+    echo "copy ${file_name}"
+    cp -p "${DATA_DIR}/${file_name}" "${TRAIN_DATA_DIR}/${file_name}"
+  done
+  date
+  du -sh "${TRAIN_DATA_DIR}" || true
+fi
+
+module purge
+module load gcc/13.3.0
+module load mesa/24.2.3
+module load mesa-glu/9.0.2
+module load glew/2.2.0
+module load glx/1.4
+
+export QT_XCB_GL_INTEGRATION="${QT_XCB_GL_INTEGRATION:-none}"
+
+source /apps/conda/miniforge3/25.11.0-1/etc/profile.d/conda.sh
+conda activate "${CONDA_ENV}"
+
+export REWIND_SCRATCH_DIR="${SCRATCH_DIR}"
+export WANDB_DIR="${SCRATCH_DIR}/wandb"
+export WANDB_CACHE_DIR="${SCRATCH_DIR}/.cache/wandb"
+export WANDB_CONFIG_DIR="${SCRATCH_DIR}/.config/wandb"
+export WANDB_MODE="${WANDB_MODE:-online}"
+export TOKENIZERS_PARALLELISM=false
+export LD_PRELOAD="$(g++ -print-file-name=libstdc++.so.6)"
+export MUJOCO_GL=egl
+export MUJOCO_PY_MUJOCO_PATH="${HOME}/.mujoco/mujoco210"
+GCC_LIBDIR="$(dirname "$(g++ -print-file-name=libstdc++.so.6)")"
+export LD_LIBRARY_PATH="${GCC_LIBDIR}:${HOME}/.mujoco/mujoco210/bin:/usr/lib/nvidia:${LD_LIBRARY_PATH:-}"
+
+if [ "${STAGE_DATA}" = "1" ]; then
+  echo "========== Verify staged H5 data =========="
+  export DATA_DIR TRAIN_DATA_DIR
+  python - <<'PY'
+import os
+import h5py
+
+src_dir = os.environ["DATA_DIR"]
+dst_dir = os.environ["TRAIN_DATA_DIR"]
+files = [
+    "full_openx_embeddings_v2_train.h5",
+    "metaworld_embeddings_train.h5",
+    "metaworld_embeddings_eval.h5",
+    "metaworld_dino_embeddings_eval_close_succ.h5",
+    "metaworld_dino_embeddings_eval_all_fail.h5",
+]
+
+
+def describe_h5_object(obj):
+    if hasattr(obj, "shape"):
+        return ("dataset", tuple(obj.shape), str(obj.dtype))
+    keys = sorted(list(obj.keys()))
+    return ("group", len(keys), tuple(keys[:3]), tuple(keys[-3:]))
+
+
+for file_name in files:
+    src_path = os.path.join(src_dir, file_name)
+    dst_path = os.path.join(dst_dir, file_name)
+    src_size = os.path.getsize(src_path)
+    dst_size = os.path.getsize(dst_path)
+    print(f"VERIFY {file_name}: src_size={src_size} dst_size={dst_size}", flush=True)
+    if src_size != dst_size:
+        raise RuntimeError(f"size mismatch for {file_name}")
+
+    with h5py.File(src_path, "r") as src_h5, h5py.File(dst_path, "r") as dst_h5:
+        src_keys = sorted(list(src_h5.keys()))
+        dst_keys = sorted(list(dst_h5.keys()))
+        if src_keys != dst_keys:
+            raise RuntimeError(f"top-level key mismatch for {file_name}")
+
+        sample_keys = src_keys[:3] + src_keys[-3:]
+        for key in sample_keys:
+            src_desc = describe_h5_object(src_h5[key])
+            dst_desc = describe_h5_object(dst_h5[key])
+            if src_desc != dst_desc:
+                raise RuntimeError(
+                    f"object metadata mismatch for {file_name}:{key}: "
+                    f"{src_desc} != {dst_desc}"
+                )
+    print(f"VERIFY_OK {file_name}", flush=True)
+
+print("STAGED_H5_VERIFY_OK", flush=True)
+PY
+fi
+
+cd "${CODE_DIR}"
+
+echo "========== Train pairwise-diff ReWiND reward model =========="
+echo "CODE_DIR=${CODE_DIR}"
+echo "DATA_DIR=${DATA_DIR}"
+echo "TRAIN_DATA_DIR=${TRAIN_DATA_DIR}"
+echo "STAGE_DATA=${STAGE_DATA}"
+echo "SCRATCH_DIR=${SCRATCH_DIR}"
+echo "CONDA_ENV=${CONDA_ENV}"
+echo "checkpoint_dir=${SCRATCH_DIR}/checkpoints"
+
+srun python -u train_reward.py \
+  --wandb_entity "${WANDB_ENTITY}" \
+  --wandb_project "${WANDB_PROJECT}" \
+  --h5_folder_path "${TRAIN_DATA_DIR}" \
+  --openx_embedding_path "${TRAIN_DATA_DIR}/full_openx_embeddings_v2_train.h5" \
+  --rewind \
+  --subsample_video \
+  --clip_grad \
+  --cosine_scheduler \
+  --batch_size 1024 \
+  --worker 1 \
+  --use_pairwise_progress_diff_loss \
+  --checkpoint_dir "${SCRATCH_DIR}/checkpoints" \
+  --wandb_dir "${SCRATCH_DIR}/wandb" \
+  --confusion_matrix_dir "${SCRATCH_DIR}/confusion_matrix_for_paper"
