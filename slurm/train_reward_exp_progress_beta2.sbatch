@@ -24,6 +24,7 @@ CONDA_ENV="${CONDA_ENV:-/scratch1/haobaizh/conda_envs/rewind}"
 WANDB_ENTITY="${WANDB_ENTITY:-rewind-valuemodel}"
 WANDB_PROJECT="${WANDB_PROJECT:-rewind-reward-training}"
 BETA="${BETA:-2.0}"
+STAGE_DATA="${STAGE_DATA:-1}"
 
 if [ ! -f "${CODE_DIR}/train_reward.py" ]; then
   echo "ERROR: CODE_DIR does not contain train_reward.py: ${CODE_DIR}" >&2
@@ -70,6 +71,29 @@ mkdir -p \
   "${SCRATCH_DIR}/.config/wandb" \
   "${SCRATCH_DIR}/confusion_matrix_for_paper"
 
+TRAIN_DATA_DIR="${DATA_DIR}"
+if [ "${STAGE_DATA}" = "1" ]; then
+  TRAIN_DATA_DIR="${TMPDIR:-/tmp}/rewind_valuemodel_datasets"
+  mkdir -p "${TRAIN_DATA_DIR}"
+
+  echo "========== Stage H5 data to local TMPDIR =========="
+  echo "source=${DATA_DIR}"
+  echo "target=${TRAIN_DATA_DIR}"
+  date
+  for file_name in \
+    full_openx_embeddings_v2_train.h5 \
+    metaworld_embeddings_train.h5 \
+    metaworld_embeddings_eval.h5 \
+    metaworld_dino_embeddings_eval_close_succ.h5 \
+    metaworld_dino_embeddings_eval_all_fail.h5
+  do
+    echo "copy ${file_name}"
+    cp -p "${DATA_DIR}/${file_name}" "${TRAIN_DATA_DIR}/${file_name}"
+  done
+  date
+  du -sh "${TRAIN_DATA_DIR}" || true
+fi
+
 module purge
 module load gcc/13.3.0
 module load mesa/24.2.3
@@ -99,6 +123,8 @@ cd "${CODE_DIR}"
 echo "========== Train exponential ReWiND reward model =========="
 echo "CODE_DIR=${CODE_DIR}"
 echo "DATA_DIR=${DATA_DIR}"
+echo "TRAIN_DATA_DIR=${TRAIN_DATA_DIR}"
+echo "STAGE_DATA=${STAGE_DATA}"
 echo "SCRATCH_DIR=${SCRATCH_DIR}"
 echo "CONDA_ENV=${CONDA_ENV}"
 echo "BETA=${BETA}"
@@ -107,8 +133,8 @@ echo "checkpoint_dir=${SCRATCH_DIR}/checkpoints"
 srun python -u train_reward.py \
   --wandb_entity "${WANDB_ENTITY}" \
   --wandb_project "${WANDB_PROJECT}" \
-  --h5_folder_path "${DATA_DIR}" \
-  --openx_embedding_path "${DATA_DIR}/full_openx_embeddings_v2_train.h5" \
+  --h5_folder_path "${TRAIN_DATA_DIR}" \
+  --openx_embedding_path "${TRAIN_DATA_DIR}/full_openx_embeddings_v2_train.h5" \
   --rewind \
   --subsample_video \
   --clip_grad \
